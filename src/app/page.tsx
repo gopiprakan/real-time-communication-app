@@ -4,29 +4,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Video,
-  Shield,
-  Zap,
-  Users,
-  ArrowRight,
-  Plus,
-  Link as LinkIcon,
-  LogOut,
-  CheckCircle2,
-  Globe,
-  Cpu
+  Plus, ArrowRight, MessageCircle, Laptop, ShieldCheck,
+  Zap, Users, Globe, Video, User
 } from 'lucide-react';
-import Image from 'next/image';
-
-interface UserData {
-  name: string;
-  isGuest: boolean;
-}
 
 export default function Home() {
   const router = useRouter();
   const [roomId, setRoomId] = useState('');
-  const [user, setUser] = useState<UserData | null>(null);
+  const [user, setUser] = useState<{ name: string } | null>(null);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -50,213 +35,203 @@ export default function Home() {
     if (roomId.trim()) router.push(`/room/${roomId.trim()}`);
   };
 
-  const logout = () => {
-    localStorage.removeItem('nexus_user');
-    setUser(null);
-  };
-
-  const fadeInUp = {
-    initial: { opacity: 0, y: 20 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.6 }
-  };
-
-  const features = [
-    { icon: <Shield className="text-primary" />, title: "Quantum Security", desc: "Military-grade E2E encryption for every interaction." },
-    { icon: <Zap className="text-accent" />, title: "Ultra Low Latency", desc: "Engineered for real-time collaboration with zero lag." },
-    { icon: <Users className="text-blue-400" />, title: "Smart Collaboration", desc: "Integrated whiteboard and multi-user sync tools." }
-  ];
-
   return (
-    <div className="relative min-h-screen bg-background text-foreground selection:bg-primary selection:text-white">
-      <div className="mesh-bg" />
+    <div className="min-h-screen relative selection:bg-indigo-100 selection:text-indigo-600">
+      {/* Impressive Background Layer */}
+      <div className="background-blur">
+        <div className="blur-orb orb-1" />
+        <div className="blur-orb orb-2" />
+        <div className="absolute inset-0 bg-white/40 dark:bg-black/40 backdrop-blur-[100px]" />
+      </div>
 
-      {/* Header */}
-      <header className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${scrolled ? 'py-4 bg-background/80 backdrop-blur-xl border-b border-white/5' : 'py-8'}`}>
-        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center gap-2 group cursor-pointer" onClick={() => router.refresh()}>
-            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20 group-hover:rotate-12 transition-transform">
-              <Cpu className="text-white" size={24} />
+      {/* Floating Header */}
+      <header className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ${scrolled ? 'py-4 bg-white/70 dark:bg-black/70 backdrop-blur-xl border-b border-gray-100 dark:border-white/5' : 'py-8'}`}>
+        <div className="max-w-7xl mx-auto px-10 flex items-center justify-between">
+          <div className="flex items-center gap-3 group cursor-pointer" onClick={() => router.push('/')}>
+            <div className="w-11 h-11 bg-indigo-600 rounded-[14px] flex items-center justify-center shadow-xl shadow-indigo-600/20 group-hover:rotate-6 transition-all duration-500">
+              <MessageCircle className="text-white" size={24} />
             </div>
-            <span className="text-2xl font-black tracking-tighter uppercase italic">Nexus</span>
+            <span className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white uppercase italic">Nexus</span>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-8">
             {user ? (
-              <div className="flex items-center gap-4">
-                <div className="hidden sm:flex items-center gap-3 px-4 py-2 bg-white/5 rounded-full border border-white/10">
-                  <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                  <span className="text-sm font-semibold tracking-tight uppercase">{user.name}</span>
+              <div className="flex items-center gap-4 group">
+                <div className="flex flex-col items-end">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Active Core</span>
+                  <span className="text-sm font-black text-gray-900 dark:text-white">{user.name}</span>
                 </div>
-                <button onClick={logout} className="p-2 hover:bg-accent/10 text-accent rounded-full transition-colors" title="Logout">
-                  <LogOut size={20} />
-                </button>
+                <div className="w-11 h-11 rounded-full bg-indigo-600/10 border border-indigo-600/20 flex items-center justify-center text-indigo-600 font-bold">
+                  {user.name.slice(0, 1).toUpperCase()}
+                </div>
               </div>
             ) : (
               <button
                 onClick={() => router.push('/auth')}
-                className="px-6 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-full font-bold text-sm shadow-xl shadow-primary/20 transition-all active:scale-95"
+                className="px-8 py-3 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-full font-bold text-sm shadow-xl hover:shadow-2xl transition-all active:scale-95 border border-gray-100 dark:border-white/5"
               >
-                Get Started
+                Sign In
               </button>
             )}
           </div>
         </div>
       </header>
 
-      <main className="pt-24 overflow-hidden">
-        {/* Hero Section */}
-        <section className="relative pt-20 pb-40">
-          <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
+      <main className="pt-40">
+        {/* Dynamic Hero Section */}
+        <section className="px-6 pb-40">
+          <div className="max-w-6xl mx-auto text-center">
             <motion.div
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8 }}
-              className="z-10"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             >
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-full mb-8">
-                <span className="flex h-2 w-2 rounded-full bg-primary animate-ping" />
-                <span className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Next Gen Communication 2026</span>
+              <div className="inline-flex items-center gap-2 px-5 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full text-[11px] font-black uppercase tracking-[0.2em] mb-12 border border-indigo-100 dark:border-indigo-500/20 shadow-inner">
+                Protocol 2026 // Active Synchronization
               </div>
 
-              <h1 className="text-6xl md:text-8xl font-black leading-[0.9] mb-8 tracking-tighter uppercase">
+              <h1 className="text-6xl md:text-9xl font-black text-gray-900 dark:text-white mb-10 tracking-tighter leading-[0.85] uppercase">
                 Connect <br />
-                <span className="gradient-text">Beyond</span> <br />
-                Limits.
+                <span className="gradient-text">Unfiltered.</span>
               </h1>
 
-              <p className="text-xl text-gray-400 font-medium leading-relaxed mb-12 max-w-lg">
-                Experience the pinnacle of real-time collaboration. Video, whiteboard, and chat seamlessly woven into one immersive environment.
+              <p className="text-xl md:text-2xl text-gray-500 dark:text-gray-400 font-medium leading-relaxed mb-16 max-w-2xl mx-auto">
+                The next evolution of real-time synergy. Secure, seamless, and stunningly collaborative.
               </p>
 
-              <div className="flex flex-col sm:flex-row gap-8 mb-16 px-1">
-                <motion.button
-                  whileHover={{ scale: 1.05, y: -5 }}
-                  whileTap={{ scale: 0.95 }}
+              <div className="flex flex-col sm:flex-row gap-8 justify-center items-center">
+                <button
                   onClick={createRoom}
-                  className="group relative flex items-center justify-center gap-4 px-10 py-6 bg-primary text-white rounded-[2rem] text-lg font-black uppercase tracking-[0.2em] shadow-2xl shadow-primary/30 transition-all border border-white/10"
+                  className="premium-btn px-12 py-6 text-lg"
                 >
-                  <Plus size={24} className="group-hover:rotate-90 transition-transform duration-500" />
-                  New Session
-                </motion.button>
+                  <Plus size={24} /> Initialize Session
+                </button>
 
-                <form onSubmit={joinRoom} className="flex-1 max-w-lg relative group">
-                  <div className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-primary transition-colors">
-                    <LinkIcon size={20} />
+                <form onSubmit={joinRoom} className="w-full sm:w-[450px] relative group">
+                  <div className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                    <Zap size={22} />
                   </div>
                   <input
                     type="text"
-                    placeholder="Enter Protocol ID..."
+                    placeholder="ENTER NODE ID..."
                     value={roomId}
                     onChange={(e) => setRoomId(e.target.value)}
-                    className="w-full bg-white/[0.03] border border-white/5 py-6 pl-[4.5rem] pr-36 rounded-[2rem] text-lg font-black focus:outline-none focus:border-primary/50 focus:ring-8 focus:ring-primary/5 transition-all placeholder:text-gray-700 placeholder:uppercase placeholder:text-xs placeholder:tracking-[0.3em] shadow-inner"
+                    className="w-full h-20 bg-white/40 dark:bg-black/40 backdrop-blur-xl border border-gray-100 dark:border-white/10 pl-16 pr-40 rounded-[28px] text-lg font-black tracking-widest focus:outline-none focus:border-indigo-600 transition-all shadow-2xl placeholder:text-gray-300 dark:placeholder:text-gray-700 placeholder:italic dark:text-white uppercase"
                   />
                   <button
                     type="submit"
-                    className="absolute right-4 top-1/2 -translate-y-1/2 px-8 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-[1.5rem] font-black uppercase tracking-[0.2em] text-[10px] transition-all active:scale-90"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 px-8 py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-[22px] font-black uppercase tracking-widest text-xs transition-all active:scale-95 shadow-xl"
                   >
                     Link
                   </button>
                 </form>
               </div>
 
-              <div className="flex flex-wrap items-center gap-10 text-gray-600 text-[10px] font-black uppercase tracking-[0.3em]">
-                <div className="flex items-center gap-3"><Globe size={14} className="text-primary/40" /> Neural Edge Network</div>
-                <div className="flex items-center gap-3"><CheckCircle2 size={14} className="text-success/40" /> Nexus_OS v4.2</div>
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 bg-success rounded-full animate-pulse" />
-                  Global Status: Operational
+              <div className="mt-32 grid grid-cols-2 md:grid-cols-4 gap-12 max-w-5xl mx-auto">
+                <div className="flex flex-col items-center gap-4 group">
+                  <div className="w-16 h-16 rounded-[22px] bg-white dark:bg-gray-800 shadow-xl flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
+                    <Laptop size={28} />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">WebRTC Core</span>
+                </div>
+                <div className="flex flex-col items-center gap-4 group">
+                  <div className="w-16 h-16 rounded-[22px] bg-white dark:bg-gray-800 shadow-xl flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
+                    <ShieldCheck size={28} />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">E2E Secure</span>
+                </div>
+                <div className="flex flex-col items-center gap-4 group">
+                  <div className="w-16 h-16 rounded-[22px] bg-white dark:bg-gray-800 shadow-xl flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
+                    <Globe size={28} />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Edge Sync</span>
+                </div>
+                <div className="flex flex-col items-center gap-4 group">
+                  <div className="w-16 h-16 rounded-[22px] bg-white dark:bg-gray-800 shadow-xl flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
+                    <Zap size={28} />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Zero Lag</span>
                 </div>
               </div>
             </motion.div>
+          </div>
+        </section>
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1, delay: 0.2 }}
-              className="relative"
-            >
-              <div className="absolute -inset-10 bg-gradient-to-tr from-primary/20 via-accent/20 to-transparent blur-3xl opacity-30 animate-pulse" />
-              <div className="relative z-10 glass-card p-4">
-                <Image
-                  src="/hero.png"
-                  alt="Nexus Hero"
-                  width={700}
-                  height={700}
-                  className="rounded-2xl object-cover shadow-2xl shadow-black/80 grayscale-[20%] hover:grayscale-0 transition-all duration-700"
-                  priority
-                />
-
-                <div className="absolute top-1/2 -left-12 p-6 glass-morphism rounded-3xl shadow-2xl float-anim border-primary/20">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center shadow-lg"><Users size={24} className="text-white" /></div>
+        {/* Feature Tease Section */}
+        <section className="py-40 bg-gray-50/50 dark:bg-gray-900/50 border-y border-gray-100 dark:border-white/5">
+          <div className="max-w-7xl mx-auto px-10">
+            <div className="grid lg:grid-cols-2 gap-32 items-center">
+              <div>
+                <h2 className="text-5xl md:text-7xl font-black mb-10 tracking-tighter uppercase italic leading-none">
+                  Modern Synergy <br />
+                  <span className="text-indigo-600 italic">Redefined.</span>
+                </h2>
+                <p className="text-xl text-gray-500 mb-12 leading-relaxed font-medium">
+                  Built with the ultimate stack to provide military-grade security and silicon-level performance. Collaborative tools like you've never seen before.
+                </p>
+                <div className="space-y-6">
+                  <div className="flex items-center gap-5 p-6 glass-card border-none rounded-[32px] hover:bg-white transition-all">
+                    <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white"><Video size={24} /></div>
                     <div>
-                      <p className="text-sm font-bold text-white tracking-tight">Active Users</p>
-                      <p className="text-[10px] text-primary uppercase font-black">1.2k connected</p>
+                      <h4 className="font-black text-lg uppercase tracking-tight">4K Video Stream</h4>
+                      <p className="text-sm text-gray-400 font-bold uppercase tracking-widest mt-0.5">Peer-to-Peer Protocol</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-5 p-6 glass-card border-none rounded-[32px] hover:bg-white transition-all">
+                    <div className="w-14 h-14 bg-accent rounded-2xl flex items-center justify-center text-white"><Users size={24} /></div>
+                    <div>
+                      <h4 className="font-black text-lg uppercase tracking-tight">Rapid Presence</h4>
+                      <p className="text-sm text-gray-400 font-bold uppercase tracking-widest mt-0.5">Socket.io Synchronization</p>
                     </div>
                   </div>
                 </div>
+              </div>
 
-                <div className="absolute bottom-12 -right-8 p-5 glass-morphism rounded-2xl shadow-2xl float-anim [animation-delay:1s] border-accent/20">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center"><Video size={20} className="text-white" /></div>
-                    <p className="text-xs font-bold uppercase tracking-widest text-white">4K Sync</p>
+              <div className="relative group">
+                <div className="absolute -inset-10 bg-indigo-600/10 rounded-[60px] blur-3xl group-hover:bg-indigo-600/20 transition-all duration-700" />
+                <div className="relative glass-card p-10 rounded-[50px] border-none shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] bg-white dark:bg-gray-900 overflow-hidden">
+                  <div className="flex items-center justify-between mb-10">
+                    <div className="flex gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-400" />
+                      <div className="w-3 h-3 rounded-full bg-yellow-400" />
+                      <div className="w-3 h-3 rounded-full bg-green-400" />
+                    </div>
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">Live Interface Preview</span>
+                  </div>
+                  <div className="aspect-video bg-gray-50 dark:bg-gray-800 rounded-[30px] flex items-center justify-center border-dashed border-2 border-gray-200 dark:border-white/5 relative group cursor-pointer">
+                    <Plus size={40} className="text-indigo-600/20 group-hover:scale-125 transition-transform" />
+                    <div className="absolute inset-0 bg-indigo-600/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-[30px]" />
+                  </div>
+                  <div className="mt-10 flex gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-gray-800" />
+                    <div className="flex-1 h-12 rounded-2xl bg-indigo-50 dark:bg-gray-800" />
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-600 shadow-xl" />
                   </div>
                 </div>
               </div>
-            </motion.div>
-          </div>
-        </section>
-
-        {/* Features Section */}
-        <section className="py-40 bg-white/[0.01]">
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="text-center mb-20">
-              <h2 className="text-4xl md:text-5xl font-black mb-6 tracking-tighter uppercase">Powering your <br /> <span className="gradient-text">digital synergy</span></h2>
-              <p className="text-gray-500 font-medium text-lg max-w-xl mx-auto">Everything you need for seamless remote collaboration, optimized for the speed of light.</p>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-8">
-              {features.map((f, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.1 }}
-                  className="glass-card p-10 group"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-8 group-hover:bg-primary/20 group-hover:scale-110 transition-all duration-500">
-                    {f.icon}
-                  </div>
-                  <h3 className="text-2xl font-black mb-4 uppercase tracking-tighter">{f.title}</h3>
-                  <p className="text-gray-500 font-medium leading-relaxed">{f.desc}</p>
-                  <div className="mt-8 flex items-center gap-2 text-primary text-xs font-black uppercase tracking-widest group-hover:translate-x-2 transition-transform cursor-pointer">
-                    Learn more <ArrowRight size={14} />
-                  </div>
-                </motion.div>
-              ))}
             </div>
           </div>
         </section>
 
-        {/* Footer */}
-        <footer className="py-20 border-t border-white/5 bg-black/40">
-          <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-12">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center"><Cpu className="text-white" size={16} /></div>
-              <span className="text-xl font-black tracking-tighter uppercase">Nexus</span>
+        {/* Impressive Footer */}
+        <footer className="py-24 bg-white dark:bg-black border-t border-gray-100 dark:border-white/5 overflow-hidden">
+          <div className="max-w-7xl mx-auto px-10 flex flex-col items-center">
+            <div className="flex items-center gap-3 mb-12 grayscale opacity-50">
+              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white"><MessageCircle size={28} /></div>
+              <span className="text-3xl font-black tracking-tighter uppercase italic text-gray-900 dark:text-white">Nexus</span>
             </div>
 
-            <div className="flex gap-12 text-sm text-gray-500 font-bold uppercase tracking-widest">
-              <a href="#" className="hover:text-primary transition-colors">Privacy</a>
-              <a href="#" className="hover:text-primary transition-colors">Terms</a>
-              <a href="#" className="hover:text-primary transition-colors">API</a>
+            <div className="flex flex-wrap justify-center gap-12 text-sm font-black uppercase tracking-[0.3em] text-gray-400 mb-16">
+              <a href="#" className="hover:text-indigo-600 transition-colors">Digital Identity</a>
+              <a href="#" className="hover:text-indigo-600 transition-colors">Security Layer</a>
+              <a href="#" className="hover:text-indigo-600 transition-colors">Global Node</a>
             </div>
 
-            <div className="text-xs text-gray-700 font-black tracking-widest uppercase italic">
-              &copy; 2026 Nexus Infrastructure. All rights reserved.
-            </div>
+            <div className="w-full h-px bg-gradient-to-r from-transparent via-gray-100 dark:via-white/5 to-transparent mb-16" />
+
+            <p className="text-[10px] font-black text-gray-300 dark:text-gray-700 uppercase tracking-[0.5em] italic">
+              Nexus Infrastructure © 2026 // Connect Beyond Limits
+            </p>
           </div>
         </footer>
       </main>

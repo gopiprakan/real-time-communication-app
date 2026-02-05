@@ -1,214 +1,207 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Pencil, Eraser, Trash2, Download, Minus, Plus, Palette, Layers, Terminal } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+    Pencil, Eraser, Trash2, Download, Square,
+    Circle as CircleIcon, Slash, Palette, Settings2, Cpu
+} from 'lucide-react';
 
 interface WhiteboardProps {
     socket: any;
     roomId: string;
 }
 
-const COLORS = ['#8b5cf6', '#f472b6', '#f59e0b', '#10b981', '#ffffff', '#000000'];
-
 const Whiteboard = ({ socket, roomId }: WhiteboardProps) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
-    const [color, setColor] = useState('#8b5cf6');
-    const [size, setSize] = useState(4);
+    const [color, setColor] = useState('#6366f1');
+    const [brushSize, setBrushSize] = useState(3);
     const [tool, setTool] = useState<'pencil' | 'eraser'>('pencil');
-    const [isClient, setIsClient] = useState(false);
 
     useEffect(() => {
-        setIsClient(true);
         const canvas = canvasRef.current;
         if (!canvas) return;
+
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const resize = () => {
-            const parent = canvas.parentElement;
-            if (parent) {
-                const tempImage = canvas.toDataURL();
-                canvas.width = parent.clientWidth;
-                canvas.height = parent.clientHeight;
-
-                const img = new Image();
-                img.src = tempImage;
-                img.onload = () => ctx.drawImage(img, 0, 0);
+        // Resize canvas to fit container
+        const resizeCanvas = () => {
+            const container = canvas.parentElement;
+            if (container) {
+                canvas.width = container.clientWidth;
+                canvas.height = container.clientHeight;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
             }
         };
 
-        resize();
-        window.addEventListener('resize', resize);
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
 
-        socket.on('drawing', (data: any) => {
-            const { x0, y0, x1, y1, color, size } = data;
-            drawLine(x0 * canvas.width, y0 * canvas.height, x1 * canvas.width, y1 * canvas.height, color, size, false);
+        socket.on('canvas-data', (data: string) => {
+            const image = new Image();
+            image.onload = () => {
+                ctx.drawImage(image, 0, 0);
+            };
+            image.src = data;
         });
 
         return () => {
-            window.removeEventListener('resize', resize);
-            socket.off('drawing');
+            window.removeEventListener('resize', resizeCanvas);
+            socket.off('canvas-data');
         };
     }, [socket]);
 
-    const drawLine = (x0: number, y0: number, x1: number, y1: number, color: string, emitSize: number, emit: boolean) => {
-        const ctx = canvasRef.current?.getContext('2d');
-        if (!ctx) return;
+    const draw = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDrawing) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!ctx || !canvas) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        ctx.strokeStyle = tool === 'eraser' ? '#ffffff' : color;
+        ctx.lineWidth = brushSize;
+        ctx.lineTo(x, y);
+        ctx.stroke();
+
+        // Emit drawing data
+        const base64Data = canvas.toDataURL();
+        socket.emit('canvas-data', { roomId, data: base64Data });
+    };
+
+    const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!ctx || !canvas) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
 
         ctx.beginPath();
-        ctx.moveTo(x0, y0);
-        ctx.lineTo(x1, y1);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = emitSize;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.stroke();
-        ctx.closePath();
-
-        if (!emit) return;
-        const w = canvasRef.current!.width;
-        const h = canvasRef.current!.height;
-
-        socket.emit('draw', {
-            roomId,
-            x0: x0 / w,
-            y0: y0 / h,
-            x1: x1 / w,
-            y1: y1 / h,
-            color,
-            size: emitSize
-        });
-    };
-
-    const onMouseDown = (e: React.MouseEvent) => {
+        ctx.moveTo(x, y);
         setIsDrawing(true);
-        const { offsetX, offsetY } = e.nativeEvent;
-        (canvasRef.current as any).lastX = offsetX;
-        (canvasRef.current as any).lastY = offsetY;
     };
 
-    const onMouseMove = (e: React.MouseEvent) => {
-        if (!isDrawing) return;
-        const { offsetX, offsetY } = e.nativeEvent;
-        const lastX = (canvasRef.current as any).lastX;
-        const lastY = (canvasRef.current as any).lastY;
-
-        drawLine(lastX, lastY, offsetX, offsetY, tool === 'eraser' ? '#030303' : color, size, true);
-
-        (canvasRef.current as any).lastX = offsetX;
-        (canvasRef.current as any).lastY = offsetY;
+    const stopDrawing = () => {
+        setIsDrawing(false);
     };
-
-    const onMouseUp = () => setIsDrawing(false);
 
     const clearCanvas = () => {
         const canvas = canvasRef.current;
-        if (canvas) {
-            const ctx = canvas.getContext('2d');
-            ctx?.clearRect(0, 0, canvas.width, canvas.height);
-        }
+        const ctx = canvas?.getContext('2d');
+        if (!ctx || !canvas) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        socket.emit('canvas-data', { roomId, data: canvas.toDataURL() });
     };
 
     const downloadBoard = () => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const link = document.createElement('a');
-        link.download = `nexus-board-${Date.now()}.png`;
+        link.download = `nexus_collab_${roomId}.png`;
         link.href = canvas.toDataURL();
         link.click();
     };
 
-    if (!isClient) return null;
-
     return (
-        <div className="flex flex-col h-full bg-[#030303]/40 rounded-[2.5rem] border border-white/5 overflow-hidden relative shadow-2xl backdrop-blur-xl group">
-            {/* Dynamic Scanline */}
-            <div className="absolute inset-0 pointer-events-none opacity-[0.02] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%]" />
+        <div className="flex flex-col h-full bg-white dark:bg-gray-900 overflow-hidden relative group">
+            {/* Sublte Branded Overlay */}
+            <div className="absolute bottom-10 left-10 flex items-center gap-4 opacity-10 pointer-events-none grayscale">
+                <Cpu size={24} className="text-indigo-600" />
+                <span className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-900 dark:text-white">Nexus_Engine // Spatial_Collab</span>
+            </div>
 
-            {/* Premium Control Palette */}
+            {/* Luxurious Floating Toolbar */}
             <motion.div
                 initial={{ y: -50, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                className="absolute top-8 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3 p-3 glass-morphism border-white/10 rounded-3xl shadow-[0_30px_90px_rgba(0,0,0,0.8)]"
+                className="absolute top-10 left-1/2 -translate-x-1/2 z-10 flex items-center gap-6 p-4 glass-card border-none bg-white/80 dark:bg-gray-800/80 rounded-[32px] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)]"
             >
-                <div className="flex items-center gap-1.5 border-r border-white/10 pr-3 mr-1">
+                <div className="flex items-center gap-2 p-2 bg-indigo-50 dark:bg-white/5 rounded-[22px]">
                     <button
                         onClick={() => setTool('pencil')}
-                        className={`p-3.5 rounded-2xl transition-all ${tool === 'pencil' ? 'bg-primary text-white shadow-xl shadow-primary/30' : 'text-gray-500 hover:bg-white/5 hover:text-white'}`}
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${tool === 'pencil' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
                     >
                         <Pencil size={20} />
                     </button>
                     <button
                         onClick={() => setTool('eraser')}
-                        className={`p-3.5 rounded-2xl transition-all ${tool === 'eraser' ? 'bg-primary text-white shadow-xl shadow-primary/30' : 'text-gray-500 hover:bg-white/5 hover:text-white'}`}
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${tool === 'eraser' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
                     >
                         <Eraser size={20} />
                     </button>
                 </div>
 
-                <div className="flex items-center gap-3 px-3">
-                    {COLORS.map(c => (
+                <div className="w-px h-8 bg-gray-100 dark:bg-white/10" />
+
+                <div className="flex items-center gap-3">
+                    {['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#000000'].map((c) => (
                         <button
                             key={c}
                             onClick={() => { setColor(c); setTool('pencil'); }}
+                            className={`w-8 h-8 rounded-full border-4 border-white dark:border-gray-900 shadow-xl transition-all hover:scale-125 ${color === c && tool === 'pencil' ? 'scale-125 border-indigo-600/20' : ''}`}
                             style={{ backgroundColor: c }}
-                            className={`w-7 h-7 rounded-xl border-2 transition-all hover:scale-125 hover:-translate-y-1 shadow-lg ${color === c && tool === 'pencil' ? 'border-white scale-110 shadow-white/20' : 'border-transparent'}`}
                         />
                     ))}
-                    <div className="relative w-8 h-8 rounded-xl overflow-hidden border border-white/20 hover:scale-110 transition-transform cursor-pointer">
-                        <input
-                            type="color"
-                            value={color}
-                            onChange={(e) => { setColor(e.target.value); setTool('pencil'); }}
-                            className="absolute -inset-2 w-12 h-12 cursor-pointer"
-                        />
-                        <Palette className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/50 pointer-events-none" size={14} />
+                    <div className="relative group/picker ml-2">
+                        <div className="w-10 h-10 rounded-2xl bg-gray-50 dark:bg-white/5 flex items-center justify-center text-gray-400 hover:text-indigo-600 transition-colors">
+                            <Palette size={18} />
+                        </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4 border-l border-white/10 pl-5 ml-2">
-                    <div className="flex items-center gap-3 bg-white/[0.03] px-4 py-2 rounded-2xl border border-white/5 group/slider">
-                        <Minus size={14} className="text-gray-600 transition-colors group-hover/slider:text-white" />
-                        <input
-                            type="range"
-                            min="1" max="40"
-                            value={size}
-                            onChange={(e) => setSize(parseInt(e.target.value))}
-                            className="w-16 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary group-hover/slider:bg-white/20"
-                        />
-                        <Plus size={14} className="text-gray-600 transition-colors group-hover/slider:text-white" />
-                    </div>
+                <div className="w-px h-8 bg-gray-100 dark:bg-white/10" />
+
+                <div className="flex items-center gap-4 px-4">
+                    <Settings2 size={16} className="text-gray-300" />
+                    <input
+                        type="range"
+                        min="1"
+                        max="20"
+                        value={brushSize}
+                        onChange={(e) => setBrushSize(parseInt(e.target.value))}
+                        className="w-24 accentuate-indigo-600"
+                    />
                 </div>
 
-                <div className="flex items-center gap-1.5 border-l border-white/10 pl-3 ml-2">
-                    <button onClick={downloadBoard} className="p-3.5 text-gray-500 hover:text-white hover:bg-white/5 rounded-2xl transition-all" title="Export Stream">
-                        <Download size={20} />
-                    </button>
-                    <button onClick={clearCanvas} className="p-3.5 text-accent/50 hover:text-accent hover:bg-accent/10 rounded-2xl transition-all" title="Wipe Node">
+                <div className="w-px h-8 bg-gray-100 dark:bg-white/10" />
+
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={clearCanvas}
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                        title="Purge Deck"
+                    >
                         <Trash2 size={20} />
+                    </button>
+                    <button
+                        onClick={downloadBoard}
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-xl hover:scale-110 active:scale-95 transition-all"
+                        title="Export Matrix"
+                    >
+                        <Download size={20} />
                     </button>
                 </div>
             </motion.div>
 
-            <div className="flex-1 relative cursor-crosshair">
-                <canvas
-                    ref={canvasRef}
-                    onMouseDown={onMouseDown}
-                    onMouseMove={onMouseMove}
-                    onMouseUp={onMouseUp}
-                    onMouseOut={onMouseUp}
-                    className="absolute inset-0 w-full h-full"
-                />
-            </div>
-
-            <div className="absolute bottom-10 left-10 flex items-center gap-3 opacity-30">
-                <Terminal size={14} className="text-primary" />
-                <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.4em] pointer-events-none">
-                    Nexus_Matrix_System // Board_v2.4
-                </span>
-            </div>
+            <canvas
+                ref={canvasRef}
+                onMouseDown={startDrawing}
+                onMouseMove={draw}
+                onMouseUp={stopDrawing}
+                onMouseOut={stopDrawing}
+                className="flex-1 w-full h-full cursor-crosshair touch-none"
+            />
         </div>
     );
 };

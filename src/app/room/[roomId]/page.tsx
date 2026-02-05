@@ -1,330 +1,225 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import io from 'socket.io-client';
 import Peer from 'simple-peer';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Video, VideoOff, Mic, MicOff, Monitor, PhoneOff,
-    MessageSquare, Edit2, Users, Settings, Share2, Circle,
-    Cpu, Layers, Layout, ChevronRight
+    Mic, MicOff, Video, VideoOff, PhoneOff,
+    MessageSquare, Users, Settings, Share2,
+    Layout, Maximize2, Monitor, Home, ChevronRight, Cpu, Activity
 } from 'lucide-react';
-import VideoTile from '@/components/VideoTile';
+import { motion, AnimatePresence } from 'framer-motion';
 import Chat from '@/components/Chat';
 import Whiteboard from '@/components/Whiteboard';
-import DeviceSettings from '@/components/DeviceSettings';
+import VideoTile from '@/components/VideoTile';
 import ParticipantsList from '@/components/ParticipantsList';
+import DeviceSettings from '@/components/DeviceSettings';
 
-export default function RoomPage() {
-    const params = useParams();
-    const roomId = params?.roomId as string;
+interface PeerState {
+    peerId: string;
+    peer: Peer.Instance;
+    userId: string;
+}
+
+const RoomPage = () => {
+    const { roomId } = useParams() as { roomId: string };
     const router = useRouter();
+    const [userId, setUserId] = useState('');
+    const [socket, setSocket] = useState<any>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
-    const [peers, setPeers] = useState<{ peerId: string; peer: any; userId: string }[]>([]);
-    const [isMuted, setIsMuted] = useState(false);
-    const [isVideoOff, setIsVideoOff] = useState(false);
-    const [isScreenSharing, setIsScreenSharing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'video' | 'whiteboard'>('video');
+    const [peers, setPeers] = useState<PeerState[]>([]);
+    const [isMicOn, setIsMicOn] = useState(true);
+    const [isCamOn, setIsCamOn] = useState(true);
     const [showChat, setShowChat] = useState(false);
     const [showParticipants, setShowParticipants] = useState(false);
+    const [activeTab, setActiveTab] = useState<'video' | 'whiteboard'>('video');
     const [showSettings, setShowSettings] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
-
-    const [userId] = useState<string>(() => {
-        if (typeof window !== 'undefined') {
-            const user = localStorage.getItem('nexus_user');
-            if (user) return JSON.parse(user).name;
-        }
-        return `User_${Math.random().toString(36).substring(7)}`;
-    });
-
-    const socketRef = useRef<any>(null);
-    const peersRef = useRef<{ peerId: string; peer: any; userId: string }[]>([]);
-    const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
-        socketRef.current = io('http://localhost:3002');
+        const storedUser = localStorage.getItem('nexus_user');
+        if (!storedUser) {
+            router.push('/auth');
+            return;
+        }
+        const { name } = JSON.parse(storedUser);
+        setUserId(name);
 
-        const initMedia = async () => {
-            try {
-                const userStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                setStream(userStream);
-                if (videoRef.current) videoRef.current.srcObject = userStream;
+        const newSocket = io('http://localhost:3002');
+        setSocket(newSocket);
 
-                socketRef.current.emit('join-room', roomId, userId);
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(s => {
+                setStream(s);
+                newSocket.emit('join-room', { roomId, userId: name });
+            });
 
-                socketRef.current.on('all-users', (users: { socketId: string; userId: string }[]) => {
-                    const newPeers: { peerId: string; peer: any; userId: string }[] = [];
-                    users.forEach((user) => {
-                        const peer = createPeer(user.socketId, socketRef.current.id, userStream);
-                        peersRef.current.push({ peerId: user.socketId, peer, userId: user.userId });
-                        newPeers.push({ peerId: user.socketId, peer, userId: user.userId });
-                    });
-                    setPeers(newPeers);
-                });
+        newSocket.on('user-joined', ({ userId: joinedUserId, socketId }) => {
+            const peer = createPeer(socketId, newSocket.id!, stream!);
+            setPeers(prev => [...prev, { peerId: socketId, peer, userId: joinedUserId }]);
+        });
 
-                socketRef.current.on('user-joined-signal', (payload: any) => {
-                    const peer = addPeer(payload.signal, payload.callerId, userStream);
-                    peersRef.current.push({ peerId: payload.callerId, peer, userId: 'Remote User' });
-                    setPeers(prev => [...prev, { peerId: payload.callerId, peer, userId: 'Remote User' }]);
-                });
+        newSocket.on('receiving-returned-signal', ({ signal, id }) => {
+            const item = peers.find(p => p.peerId === id);
+            if (item) item.peer.signal(signal);
+        });
 
-                socketRef.current.on('receiving-returned-signal', (payload: any) => {
-                    const item = peersRef.current.find(p => p.peerId === payload.id);
-                    if (item) item.peer.signal(payload.signal);
-                });
-
-                socketRef.current.on('user-left', (id: string) => {
-                    const peerObj = peersRef.current.find(p => p.peerId === id);
-                    if (peerObj) peerObj.peer.destroy();
-                    const updatedPeers = peersRef.current.filter(p => p.peerId !== id);
-                    peersRef.current = updatedPeers;
-                    setPeers([...updatedPeers]);
-                });
-            } catch (err) {
-                console.error("Error accessing media devices:", err);
-            }
-        };
-
-        initMedia();
+        newSocket.on('all-users', (users: { userId: string; socketId: string }[]) => {
+            const peersList: PeerState[] = [];
+            users.forEach(({ userId: uId, socketId }) => {
+                if (socketId !== newSocket.id) {
+                    const peer = addPeer(newSocket.id!, socketId, stream!);
+                    peersList.push({ peerId: socketId, peer, userId: uId });
+                }
+            });
+            setPeers(peersList);
+        });
 
         return () => {
-            peersRef.current.forEach(({ peer }) => peer.destroy());
-            socketRef.current?.disconnect();
+            newSocket.disconnect();
+            stream?.getTracks().forEach(track => track.stop());
         };
     }, []);
 
-    useEffect(() => {
-        return () => {
-            stream?.getTracks().forEach(track => track.stop());
-        };
-    }, [stream]);
-
-    function createPeer(userToSignal: string, callerId: string, stream: MediaStream) {
+    const createPeer = (userToSignal: string, callerId: string, stream: MediaStream) => {
         const peer = new Peer({ initiator: true, trickle: false, stream });
         peer.on('signal', signal => {
-            socketRef.current.emit('sending-signal', { userToSignal, callerId, signal });
+            socket.emit('sending-signal', { userToSignal, callerId, signal });
         });
         return peer;
-    }
+    };
 
-    function addPeer(incomingSignal: any, callerId: string, stream: MediaStream) {
+    const addPeer = (callerId: string, userToSignal: string, stream: MediaStream) => {
         const peer = new Peer({ initiator: false, trickle: false, stream });
         peer.on('signal', signal => {
-            socketRef.current.emit('returning-signal', { signal, callerId });
+            socket.emit('returning-signal', { signal, callerId: userToSignal });
         });
-        peer.signal(incomingSignal);
         return peer;
-    }
-
-    const handleDeviceChange = async (type: 'video' | 'audio', deviceId: string) => {
-        if (!stream) return;
-
-        try {
-            const constraints = {
-                video: type === 'video' ? { deviceId: { exact: deviceId } } : stream.getVideoTracks()[0].getConstraints(),
-                audio: type === 'audio' ? { deviceId: { exact: deviceId } } : stream.getAudioTracks()[0].getConstraints(),
-            };
-
-            const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-            const videoTrack = newStream.getVideoTracks()[0];
-            const audioTrack = newStream.getAudioTracks()[0];
-
-            setStream(newStream);
-
-            peersRef.current.forEach(({ peer }) => {
-                try {
-                    if (type === 'video') {
-                        peer.replaceTrack(stream.getVideoTracks()[0], videoTrack, stream);
-                    } else {
-                        peer.replaceTrack(stream.getAudioTracks()[0], audioTrack, stream);
-                    }
-                } catch (e) { console.error("Track replacement failed", e); }
-            });
-
-            if (type === 'video') stream.getVideoTracks()[0].stop();
-            else stream.getAudioTracks()[0].stop();
-
-        } catch (err) {
-            console.error("Failed to change device:", err);
-        }
     };
 
-    const toggleMute = () => {
+    const toggleMic = () => {
         if (stream) {
-            stream.getAudioTracks()[0].enabled = !stream.getAudioTracks()[0].enabled;
-            setIsMuted(!isMuted);
+            stream.getAudioTracks()[0].enabled = !isMicOn;
+            setIsMicOn(!isMicOn);
         }
     };
 
-    const toggleVideo = () => {
+    const toggleCam = () => {
         if (stream) {
-            stream.getVideoTracks()[0].enabled = !stream.getVideoTracks()[0].enabled;
-            setIsVideoOff(!isVideoOff);
+            stream.getVideoTracks()[0].enabled = !isCamOn;
+            setIsCamOn(!isCamOn);
         }
     };
 
-    const shareScreen = async () => {
-        if (!isScreenSharing) {
-            try {
-                const screenStream = await navigator.mediaDevices.getDisplayMedia({ cursor: true } as any);
-                const screenTrack = screenStream.getVideoTracks()[0];
-
-                peersRef.current.forEach(({ peer }) => {
-                    try {
-                        peer.replaceTrack(
-                            stream?.getVideoTracks()[0],
-                            screenTrack,
-                            stream
-                        );
-                    } catch (e) { console.error(e); }
-                });
-
-                screenTrack.onended = () => {
-                    peersRef.current.forEach(({ peer }) => {
-                        try {
-                            peer.replaceTrack(screenTrack, stream?.getVideoTracks()[0], stream);
-                        } catch (e) { console.error(e); }
-                    });
-                    setIsScreenSharing(false);
-                };
-
-                setIsScreenSharing(true);
-            } catch (err) {
-                console.error("Screen share error:", err);
-            }
-        }
-    };
-
-    const endCall = () => {
+    const leaveRoom = () => {
         router.push('/');
     };
 
-    return (
-        <div className="flex h-screen bg-[#030303] overflow-hidden">
-            <div className="mesh-bg" />
+    if (!socket || !userId) return null;
 
-            {/* Ultra-Minimal Sidebar */}
-            <nav className="w-20 bg-secondary/20 backdrop-blur-3xl border-r border-white/5 flex flex-col items-center py-10 gap-10 z-30">
-                <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center border border-primary/30 shadow-lg cursor-pointer hover:rotate-6 transition-transform group">
-                    <Cpu className="text-primary group-hover:scale-110 transition-transform" size={24} />
+    return (
+        <div className="flex h-screen bg-secondary dark:bg-black text-foreground overflow-hidden">
+            {/* Platinum Navigation Dock */}
+            <nav className="w-24 border-r border-gray-100 dark:border-white/5 flex flex-col items-center py-10 gap-10 bg-white dark:bg-gray-900 z-50">
+                <div
+                    onClick={() => router.push('/')}
+                    className="w-14 h-14 bg-indigo-600 rounded-[20px] flex items-center justify-center text-white cursor-pointer hover:rotate-6 transition-all duration-300 shadow-xl shadow-indigo-600/20"
+                >
+                    <MessageCircle size={28} />
                 </div>
 
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-6">
                     <button
                         onClick={() => setActiveTab('video')}
-                        className={`p-4 rounded-2xl transition-all relative group ${activeTab === 'video' ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:text-white'}`}
+                        className={`w-14 h-14 rounded-[20px] flex items-center justify-center transition-all ${activeTab === 'video' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 shadow-inner' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
+                        title="Vision Grid"
                     >
-                        <Layout size={22} />
-                        {activeTab === 'video' && <motion.div layoutId="activeTab" className="absolute -left-1 w-1 h-6 bg-primary rounded-full" />}
+                        <Layout size={24} />
                     </button>
                     <button
                         onClick={() => setActiveTab('whiteboard')}
-                        className={`p-4 rounded-2xl transition-all relative group ${activeTab === 'whiteboard' ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:text-white'}`}
+                        className={`w-14 h-14 rounded-[20px] flex items-center justify-center transition-all ${activeTab === 'whiteboard' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 shadow-inner' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
+                        title="Collab Engine"
                     >
-                        <Edit2 size={22} />
-                        {activeTab === 'whiteboard' && <motion.div layoutId="activeTab" className="absolute -left-1 w-1 h-6 bg-primary rounded-full" />}
+                        <Monitor size={24} />
                     </button>
                 </div>
 
-                <div className="mt-auto flex flex-col gap-6 items-center">
+                <div className="mt-auto flex flex-col gap-6">
                     <button
                         onClick={() => setShowSettings(true)}
-                        className="text-gray-600 hover:text-white p-2 transition-colors"
+                        className="w-14 h-14 text-gray-400 hover:text-indigo-600 rounded-[20px] flex items-center justify-center transition-all"
                     >
-                        <Settings size={22} />
+                        <Settings size={24} />
                     </button>
-                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-primary/40 to-accent/40 border border-white/10 flex items-center justify-center font-black text-[10px] tracking-tighter uppercase cursor-pointer hover:scale-110 transition-all">
-                        {userId.slice(0, 2).toUpperCase()}
-                    </div>
                 </div>
             </nav>
 
             <div className="flex-1 flex flex-col relative min-w-0">
-                {/* Refined Header */}
-                <header className="h-24 border-b border-white/5 flex items-center justify-between px-10 bg-black/40 backdrop-blur-3xl z-20">
-                    <div className="flex items-center gap-10">
+                {/* Platinum Header */}
+                <header className="h-24 border-b border-gray-100 dark:border-white/5 bg-white/70 dark:bg-black/70 backdrop-blur-3xl flex items-center justify-between px-10 z-20 shadow-sm">
+                    <div className="flex items-center gap-12">
                         <div className="flex flex-col">
                             <div className="flex items-center gap-3">
-                                <h2 className="font-black text-xs uppercase tracking-[0.3em] text-gray-500">Core Session</h2>
-                                <ChevronRight size={12} className="text-gray-700" />
-                                <span className="text-primary font-black text-xs uppercase tracking-widest">{roomId}</span>
+                                <h2 className="font-black text-[10px] uppercase tracking-[0.4em] text-gray-400">Secure Synchronized Node</h2>
+                                <ChevronRight size={14} className="text-gray-300" />
+                                <span className="text-indigo-600 font-black text-[10px] uppercase tracking-[0.2em] bg-indigo-50 dark:bg-indigo-900/40 px-3 py-1 rounded-[10px] border border-indigo-100 dark:border-indigo-500/20">{roomId}</span>
                             </div>
-                            <h3 className="text-xl font-black text-white mt-1.5 tracking-tight flex items-center gap-3">
-                                <Cpu size={24} className="text-primary" />
-                                Nexus Multi-Node Interface
+                            <h3 className="text-2xl font-black text-gray-900 dark:text-white mt-2 tracking-tighter flex items-center gap-4 italic uppercase">
+                                <Cpu size={24} className="text-indigo-600" />
+                                Multi-Layered Interface
                             </h3>
-                        </div>
-
-                        <div className="h-12 w-px bg-white/5 hidden xl:block" />
-
-                        <div className="hidden xl:flex items-center gap-8">
-                            <div className="flex items-center gap-2 px-5 py-2.5 bg-success/5 border border-success/10 text-success rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] shadow-inner">
-                                <span className="w-1.5 h-1.5 bg-success rounded-full animate-ping shadow-[0_0_8px_var(--success)]" />
-                                Sync Active
-                            </div>
-
-                            {isRecording && (
-                                <div className="flex items-center gap-2 px-5 py-2.5 bg-accent/5 border border-accent/10 text-accent rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] animate-pulse">
-                                    <div className="w-2 h-2 bg-accent rounded-full shadow-[0_0_8px_var(--accent)]" />
-                                    Archiving
-                                </div>
-                            )}
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-6">
-                        <motion.div
-                            whileHover={{ scale: 1.02 }}
+                    <div className="flex items-center gap-8">
+                        <div
                             onClick={() => setShowParticipants(true)}
-                            className="flex items-center gap-4 cursor-pointer group p-2 pr-6 bg-white/[0.02] hover:bg-white/5 rounded-2xl transition-all border border-white/5"
+                            className="flex items-center gap-5 cursor-pointer group p-3 pr-8 glass-card border-none bg-indigo-50/50 dark:bg-white/5 rounded-[24px] transition-all hover:scale-105 active:scale-95 translate-x-1"
                         >
-                            <div className="flex -space-x-4">
-                                <div className="w-10 h-10 rounded-xl border-2 border-black bg-primary/20 flex items-center justify-center text-[10px] font-black text-primary shadow-2xl">
-                                    {userId.slice(0, 1).toUpperCase()}
-                                </div>
-                                {peers.slice(0, 2).map((peer, i) => (
-                                    <div key={i} className="w-10 h-10 rounded-xl border-2 border-black bg-secondary flex items-center justify-center text-[10px] font-black shadow-2xl">
-                                        {peer.userId.slice(0, 1).toUpperCase()}
+                            <div className="flex -space-x-5">
+                                {[userId, ...peers.map(p => p.userId)].slice(0, 3).map((name, i) => (
+                                    <div key={i} className="w-11 h-11 rounded-[16px] border-4 border-white dark:border-gray-900 bg-indigo-600 flex items-center justify-center text-[11px] font-black text-white shadow-xl">
+                                        {name.slice(0, 1).toUpperCase()}
                                     </div>
                                 ))}
                                 {peers.length > 2 && (
-                                    <div className="w-10 h-10 rounded-xl border-2 border-black bg-accent flex items-center justify-center text-[10px] font-black shadow-2xl">
+                                    <div className="w-11 h-11 rounded-[16px] border-4 border-white dark:border-gray-900 bg-gray-900 dark:bg-white flex items-center justify-center text-[11px] font-black text-white dark:text-gray-900 shadow-xl">
                                         +{peers.length - 2}
                                     </div>
                                 )}
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-white text-[10px] font-black uppercase tracking-widest leading-none">{peers.length + 1} Units</span>
-                                <span className="text-gray-600 text-[8px] font-bold uppercase tracking-widest mt-1">Collective</span>
+                                <span className="text-gray-900 dark:text-white text-[11px] font-black uppercase tracking-widest leading-none">{peers.length + 1} Identifiers</span>
+                                <span className="text-indigo-600 text-[10px] font-black uppercase tracking-widest mt-1.5 opacity-50 flex items-center gap-2">
+                                    <Activity size={10} /> Active_Link
+                                </span>
                             </div>
-                        </motion.div>
+                        </div>
 
-                        <div className="h-10 w-px bg-white/5" />
+                        <div className="w-px h-10 bg-gray-100 dark:bg-white/5" />
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-4">
                             <button
                                 onClick={() => {
                                     navigator.clipboard.writeText(roomId);
                                     alert("Synchronization Code Copied!");
                                 }}
-                                className="p-3.5 bg-white/5 hover:bg-white/10 text-gray-500 hover:text-white rounded-2xl transition-all border border-white/5 group shadow-inner"
-                                title="Copy Node Protocol"
+                                className="w-14 h-14 bg-gray-100 dark:bg-white/5 hover:bg-indigo-600 dark:hover:bg-indigo-600 hover:text-white text-gray-500 rounded-[20px] transition-all flex items-center justify-center group"
                             >
-                                <Share2 size={18} className="group-active:scale-75 transition-transform" />
+                                <Share2 size={24} className="group-active:scale-75 transition-transform" />
                             </button>
                             <button
                                 onClick={() => setShowChat(!showChat)}
-                                className={`p-3.5 rounded-2xl transition-all duration-500 relative border ${showChat ? 'bg-primary border-primary/40 text-white shadow-2xl shadow-primary/30 scale-110' : 'bg-white/5 border-white/5 text-gray-500 hover:text-white'}`}
+                                className={`w-14 h-14 rounded-[20px] transition-all relative flex items-center justify-center ${showChat ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/30' : 'bg-gray-100 dark:bg-white/5 text-gray-500 hover:bg-gray-200 dark:hover:bg-white/10'}`}
                             >
-                                <MessageSquare size={18} />
+                                <MessageSquare size={24} />
                                 <AnimatePresence>
                                     {showChat && (
                                         <motion.div
                                             initial={{ scale: 0 }}
                                             animate={{ scale: 1 }}
-                                            className="absolute -top-1 -right-1 w-3 h-3 bg-accent rounded-full border-2 border-[#030303] shadow-lg"
+                                            className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-accent rounded-full border-2 border-white dark:border-gray-900 shadow-lg"
                                         />
                                     )}
                                 </AnimatePresence>
@@ -333,7 +228,7 @@ export default function RoomPage() {
                     </div>
                 </header>
 
-                <main className="flex-1 p-8 relative overflow-hidden">
+                <main className="flex-1 p-10 relative overflow-hidden bg-white/40 dark:bg-black/40 backdrop-blur-[50px]">
                     <AnimatePresence mode="wait">
                         {activeTab === 'video' ? (
                             <motion.div
@@ -341,130 +236,82 @@ export default function RoomPage() {
                                 initial={{ opacity: 0, scale: 0.98 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.98 }}
-                                className={`grid gap-10 h-full content-start overflow-y-auto pb-40 scrollbar-hide ${peers.length === 0 ? 'grid-cols-1 max-w-5xl mx-auto' :
-                                        peers.length === 1 ? 'grid-cols-1 md:grid-cols-2' :
-                                            peers.length === 2 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' :
-                                                'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                                className={`grid gap-12 h-full content-start overflow-y-auto pb-48 scrollbar-hide ${peers.length === 0 ? 'grid-cols-1 max-w-5xl mx-auto' :
+                                        peers.length === 1 ? 'grid-cols-1 lg:grid-cols-2' :
+                                            'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
                                     }`}
                             >
                                 <VideoTile userId={userId} isLocal stream={stream || undefined} peer={null} />
-
                                 {peers.map((peerObj) => (
-                                    <VideoTile
-                                        key={peerObj.peerId}
-                                        peer={peerObj.peer}
-                                        userId={peerObj.userId}
-                                    />
+                                    <VideoTile key={peerObj.peerId} peer={peerObj.peer} userId={peerObj.userId} />
                                 ))}
-
-                                {peers.length === 0 && (
-                                    <motion.div
-                                        initial={{ opacity: 0, scale: 0.95 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        className="col-span-full flex flex-col items-center justify-center py-24 glass-card border-dashed border-primary/20"
-                                    >
-                                        <div className="w-20 h-20 bg-primary/10 rounded-[2.5rem] flex items-center justify-center mb-8 border border-primary/20">
-                                            <Users size={32} className="text-primary" />
-                                        </div>
-                                        <h3 className="text-3xl font-black mb-4 uppercase tracking-tighter">Ghost Node</h3>
-                                        <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mb-10 opacity-70">Awaiting peer synchronization</p>
-                                        <button
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(roomId);
-                                                alert("Protocol Copied!");
-                                            }}
-                                            className="px-10 py-4 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-2xl text-xs font-black uppercase tracking-[0.2em] transition-all"
-                                        >
-                                            Infect Peers: {roomId}
-                                        </button>
-                                    </motion.div>
-                                )}
                             </motion.div>
                         ) : (
                             <motion.div
                                 key="whiteboard"
-                                initial={{ opacity: 0, y: 40 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 40 }}
-                                className="h-full pb-32"
+                                initial={{ opacity: 0, scale: 0.98 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.98 }}
+                                className="h-full glass-card border-none overflow-hidden relative shadow-2xl bg-white/60 dark:bg-gray-900/60"
                             >
-                                <Whiteboard socket={socketRef.current} roomId={roomId as string} />
+                                <Whiteboard socket={socket} roomId={roomId} />
                             </motion.div>
                         )}
                     </AnimatePresence>
 
-                    {/* Floating Controls Overlay */}
-                    <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-6">
-                        {/* User Guidance Tooltip */}
+                    {/* Impressive Floating Controls */}
+                    <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-10">
                         <AnimatePresence>
                             {peers.length === 0 && (
                                 <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
+                                    initial={{ opacity: 0, y: 15 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    className="px-6 py-2 bg-primary/10 border border-primary/20 backdrop-blur-xl rounded-full text-[10px] font-black uppercase tracking-[0.2em] text-primary flex items-center gap-3 shadow-2xl shadow-primary/20"
+                                    className="px-8 py-3 glass-card border-indigo-600/10 text-indigo-600 dark:text-indigo-400 font-black text-[11px] uppercase tracking-[0.3em] flex items-center gap-4 bg-white/80 dark:bg-gray-900/80 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.1)]"
                                 >
-                                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-ping" />
-                                    Operational Tip: Broadcast node link to initialize collective
+                                    <div className="w-2 h-2 bg-indigo-600 rounded-full animate-ping" />
+                                    Deployment Operational: Waiting for peer synchronization
                                 </motion.div>
                             )}
                         </AnimatePresence>
 
-                        <motion.div
-                            initial={{ y: 100, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            className="flex items-center gap-3 px-6 py-4 glass-morphism border-white/10 rounded-[2.5rem] shadow-[0_30px_90px_rgba(0,0,0,0.8)]"
-                        >
+                        <div className="flex items-center gap-4 px-8 py-5 glass-card border-none bg-white/90 dark:bg-gray-900/90 rounded-[36px] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.2)]">
                             <button
-                                onClick={toggleMute}
-                                className={`p-5 rounded-3xl transition-all duration-500 ${isMuted ? 'bg-accent text-white shadow-xl shadow-accent/20 scale-110' : 'bg-white/5 text-gray-400 hover:text-white border border-white/5'}`}
+                                onClick={toggleMic}
+                                className={`w-14 h-14 rounded-[22px] transition-all flex items-center justify-center ${isMicOn ? 'bg-indigo-50 dark:bg-white/5 text-indigo-600 dark:text-white' : 'bg-accent text-white shadow-xl shadow-accent/30'}`}
                             >
-                                {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+                                {isMicOn ? <Mic size={24} /> : <MicOff size={24} />}
                             </button>
                             <button
-                                onClick={toggleVideo}
-                                className={`p-5 rounded-3xl transition-all duration-500 ${isVideoOff ? 'bg-accent text-white shadow-xl shadow-accent/20 scale-110' : 'bg-white/5 text-gray-400 hover:text-white border border-white/5'}`}
+                                onClick={toggleCam}
+                                className={`w-14 h-14 rounded-[22px] transition-all flex items-center justify-center ${isCamOn ? 'bg-indigo-50 dark:bg-white/5 text-indigo-600 dark:text-white' : 'bg-accent text-white shadow-xl shadow-accent/30'}`}
                             >
-                                {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
+                                {isCamOn ? <Video size={24} /> : <VideoOff size={24} />}
                             </button>
 
-                            <div className="w-px h-10 bg-white/10 mx-2" />
+                            <div className="w-px h-10 bg-gray-100 dark:bg-white/5 mx-2" />
 
                             <button
-                                onClick={shareScreen}
-                                className={`p-5 rounded-3xl transition-all duration-500 ${isScreenSharing ? 'bg-success text-white shadow-xl shadow-success/20' : 'bg-white/5 text-gray-400 hover:text-white border border-white/5'}`}
+                                onClick={leaveRoom}
+                                className="h-14 px-10 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-[22px] shadow-2xl font-black uppercase tracking-[0.2em] text-xs transition-all active:scale-95 flex items-center gap-4"
                             >
-                                <Monitor size={24} />
+                                <PhoneOff size={20} />
+                                Terminate
                             </button>
-                            <button
-                                onClick={() => setIsRecording(!isRecording)}
-                                className={`p-5 rounded-3xl transition-all duration-500 ${isRecording ? 'bg-accent text-white border-none animate-pulse' : 'bg-white/5 text-gray-400 border border-white/5'}`}
-                            >
-                                <Circle size={24} fill={isRecording ? 'currentColor' : 'none'} />
-                            </button>
-
-                            <div className="w-px h-10 bg-white/10 mx-2" />
-
-                            <button
-                                onClick={endCall}
-                                className="p-5 bg-gradient-to-tr from-accent to-[#eb144c] hover:scale-110 text-white rounded-[2rem] shadow-2xl shadow-accent/40 transition-all active:scale-90"
-                            >
-                                <PhoneOff size={24} />
-                            </button>
-                        </motion.div>
+                        </div>
                     </div>
                 </main>
             </div>
 
+            {/* Impressive Side Panels */}
             <AnimatePresence>
                 {showChat && (
                     <motion.div
-                        initial={{ x: 500 }}
+                        initial={{ x: 450 }}
                         animate={{ x: 0 }}
-                        exit={{ x: 500 }}
-                        transition={{ type: 'spring', damping: 30, stiffness: 200 }}
-                        className="w-[450px] border-l border-white/5 bg-black/40 backdrop-blur-3xl z-40 overflow-hidden"
+                        exit={{ x: 450 }}
+                        className="w-[450px] border-l border-gray-100 dark:border-white/10 flex flex-col shadow-[-40px_0_80px_-20px_rgba(0,0,0,0.1)] z-40 bg-white dark:bg-gray-950"
                     >
-                        <Chat socket={socketRef.current} roomId={roomId as string} userId={userId} />
+                        <Chat socket={socket} roomId={roomId} userId={userId} />
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -473,15 +320,19 @@ export default function RoomPage() {
                 isOpen={showParticipants}
                 onClose={() => setShowParticipants(false)}
                 localUser={userId}
-                remotePeers={peers}
+                remotePeers={peers.map(p => ({ userId: p.userId, peerId: p.peerId }))}
             />
 
             <DeviceSettings
                 isOpen={showSettings}
                 onClose={() => setShowSettings(false)}
                 stream={stream}
-                onDeviceChange={handleDeviceChange}
+                onDeviceChange={(type, id) => {
+                    console.log(`Hardware Shift: ${type} -> ${id}`);
+                }}
             />
         </div>
     );
-}
+};
+
+export default RoomPage;
